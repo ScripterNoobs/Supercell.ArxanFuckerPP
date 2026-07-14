@@ -28,6 +28,5 @@ To use Supercell.ArxanUnprotector you firstly need to decrypt the strings of the
 - ```Supercell.ArxanUnprotector -a encrypt -i liboriginal.so -m liboriginal.so.decrypted -o liboriginal.so.encrypted -e (if you want to bring back string encryption)```: Encrypt strings in liboriginal.so.decrypted and save to liboriginal.so.encrypted. Note that you need to update the checksums after encrypting the strings.
 
 ## Contact
-You can contact the original owner on Discord: ```mimi8297```.
-I don't provide any support for this tool but I'm happy to answer any questions you may have.
-But you can also dm me ```depresiveprimo``` if you need any support for the tool
+You can contact the owner on Discord: ```.selahattingt```.
+If you need any support or have questions regarding this tool, feel free to direct message.
