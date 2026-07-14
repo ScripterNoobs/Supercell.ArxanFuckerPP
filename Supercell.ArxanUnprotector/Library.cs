@@ -111,6 +111,8 @@ public abstract class Library
         }
     }
 
+    public byte[] Wutf8Table => _wutf8Table;
+
     public List<int> GetValueAddresses(uint value)
     {
         if (_valueAddressesIndex.Count == 0)
