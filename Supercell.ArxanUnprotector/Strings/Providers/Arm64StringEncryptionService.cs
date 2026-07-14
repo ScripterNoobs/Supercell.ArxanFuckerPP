@@ -204,44 +204,41 @@ public class Arm64StringEncryptionService : IStringEncryptionService
         // Approximate code section (.text)
         Span<byte> codeSection = Library.GetSection(SectionType.Text, out int codeAddress);
         
-        using (Arm64Disassembler disassembler = new Arm64Disassembler(true))
+        // We search for ADRP to target page
+        for (int offset = 0; offset < codeSection.Length - 24; offset += 4)
         {
-            // We search for ADRP to target page
-            for (int offset = 0; offset < codeSection.Length - 24; offset += 4)
+            uint val = BitConverter.ToUInt32(codeSection.Slice(offset, 4));
+            if ((val & 0x9F000000) == 0x90000000)
             {
-                uint val = BitConverter.ToUInt32(codeSection.Slice(offset, 4));
-                if ((val & 0x9F000000) == 0x90000000)
+                // Decode ADRP immediate
+                uint immlo = (val >> 29) & 3;
+                uint immhi = (val >> 5) & 0x7FFFF;
+                long imm = (immhi << 2) | immlo;
+                if ((imm & 0x100000) != 0)
+                    imm -= 0x200000;
+                
+                int pc = codeAddress + offset;
+                long addr = (pc & ~0xFFF) + imm * 4096;
+                if (addr == pageTarget)
                 {
-                    // Decode ADRP immediate
-                    uint immlo = (val >> 29) & 3;
-                    uint immhi = (val >> 5) & 0x7FFFF;
-                    long imm = (immhi << 2) | immlo;
-                    if ((imm & 0x100000) != 0)
-                        imm -= 0x200000;
-                    
-                    int pc = codeAddress + offset;
-                    long addr = (pc & ~0xFFF) + imm * 4096;
-                    if (addr == pageTarget)
+                    // Check if next instruction is ADD referencing tableAddr
+                    uint nextVal = BitConverter.ToUInt32(codeSection.Slice(offset + 4, 4));
+                    if ((nextVal & 0xFFC00000) == 0x91000000) // ADD (immediate)
                     {
-                        // Check if next instruction is ADD referencing tableAddr
-                        uint nextVal = BitConverter.ToUInt32(codeSection.Slice(offset + 4, 4));
-                        if ((nextVal & 0xFFC00000) == 0x91000000) // ADD (immediate)
+                        uint imm12 = (nextVal >> 10) & 0xFFF;
+                        if (imm12 == offsetTarget)
                         {
-                            uint imm12 = (nextVal >> 10) & 0xFFF;
-                            if (imm12 == offsetTarget)
+                            // We found the reference inside the function!
+                            // Scan backward for the start of the function (common ARM64 prologue stp x29, x30, [sp, ...])
+                            // Let's scan backward up to 0x500 bytes for function boundaries.
+                            for (int scan = offset; scan >= Math.Max(0, offset - 0x500); scan -= 4)
                             {
-                                // We found the reference inside the function!
-                                // Scan backward for the start of the function (common ARM64 prologue stp x29, x30, [sp, ...])
-                                // Let's scan backward up to 0x500 bytes for function boundaries.
-                                for (int scan = offset; scan >= Math.Max(0, offset - 0x500); scan -= 4)
+                                uint testVal = BitConverter.ToUInt32(codeSection.Slice(scan, 4));
+                                // Match stp xN, xM, [sp, ...] or ret
+                                if ((testVal & 0xFFC00000) == 0xA9000000 || testVal == 0xD65F03C0)
                                 {
-                                    uint testVal = BitConverter.ToUInt32(codeSection.Slice(scan, 4));
-                                    // Match stp xN, xM, [sp, ...] or ret
-                                    if ((testVal & 0xFFC00000) == 0xA9000000 || testVal == 0xD65F03C0)
-                                    {
-                                        int funcAddr = codeAddress + (testVal == 0xD65F03C0 ? scan + 4 : scan);
-                                        return funcAddr;
-                                    }
+                                    int funcAddr = codeAddress + (testVal == 0xD65F03C0 ? scan + 4 : scan);
+                                    return funcAddr;
                                 }
                             }
                         }
