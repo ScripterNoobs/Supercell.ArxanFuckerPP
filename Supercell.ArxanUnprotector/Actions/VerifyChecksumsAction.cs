@@ -1,0 +1,87 @@
+namespace Supercell.ArxanUnprotector.Actions;
+
+using Supercell.ArxanUnprotector;
+using Supercell.ArxanUnprotector.Ranges;
+
+public class VerifyChecksumsAction : IAction
+{
+    public string Execute(Library original, Library modified, string output, bool isKillStringEncryption)
+    {
+        if (isKillStringEncryption) Console.WriteLine("Use kill string encryption with the 'decrypt' action");
+        if (original == null)
+            return "Original library required to verify checksums.";
+        if (modified == null)
+            return "No library chosen to verify checksums.";
+
+        // For the new Arxan version, we do not call DecryptStrings on original (raw on disk) 
+        // to avoid disassembler failures since we perform dump-diff decryption.
+        original.InvalidateCache();
+        modified.InvalidateCache();
+
+        return CheckChecksums(original, modified);
+    }
+
+    private string CheckChecksums(Library original, Library modified)
+    {
+        var originalTables = original.RangeTables;
+        if (originalTables.Count == 0 && modified.RangeTables.Count > 0)
+        {
+            originalTables = modified.RangeTables;
+        }
+
+        Console.WriteLine($"[*] Found {originalTables.Count} range tables to verify.");
+
+        for (int i = 0; i < originalTables.Count; i++)
+        {
+            RangeTable originalRangeTable = originalTables[i];
+            RangeTable modifiedRangeTable = modified.RangeTables.FirstOrDefault(t => t.StartAddress == originalRangeTable.StartAddress && t.EndAddress == originalRangeTable.EndAddress);
+
+            Console.WriteLine($"[-] Table {i + 1}: Start=0x{originalRangeTable.StartAddress:X8}, End=0x{originalRangeTable.EndAddress:X8}, Entries={originalRangeTable.Entries.Count}");
+
+            if (modifiedRangeTable == null)
+            {
+                if (originalRangeTable.ChecksumLocations.Count == 0)
+                {
+                    Console.WriteLine("    [!] Table has no checksum locations, skipping verification.");
+                    continue;
+                }
+                
+                return $"Range table not found in modified library. Start address: {originalRangeTable.StartAddress:X8}, End address: {originalRangeTable.EndAddress:X8}";
+            }
+
+            RangeTableChecksum checksum = modifiedRangeTable.Checksum;
+            Console.WriteLine($"    Calculated checksum keys: Key1=0x{checksum.Key1:X8}, Key2=0x{checksum.Key2:X8}, Key3=0x{checksum.Key3:X8}");
+            
+            foreach (RangeTableChecksumLocation checksumLocation in originalRangeTable.ChecksumLocations)
+            {
+                string result = CheckChecksum(modified, modifiedRangeTable, checksumLocation.Key1, checksum.Key1) ??
+                                CheckChecksum(modified, modifiedRangeTable, checksumLocation.Key2, checksum.Key2) ??
+                                CheckChecksum(modified, modifiedRangeTable, checksumLocation.Key3, checksum.Key3);
+
+                if (result != null)
+                {
+                    return result;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private string CheckChecksum(Library library, RangeTable rangeTable, int address, uint value)
+    {
+        uint writtenChecksum = BitConverter.ToUInt32(library.Take(address, 4));
+        uint calculatedChecksum = value;
+                
+        if (calculatedChecksum != writtenChecksum)
+        {
+            return $"Checksum mismatch for range table {rangeTable.StartAddress:x8}. Written: {writtenChecksum:x8}, calculated: {calculatedChecksum:x8}, checksum address: {address:x8}";
+        }
+        else
+        {
+            Console.WriteLine("Checksum match for range table {0:x8}. Checksum: {1:x8}", rangeTable.StartAddress, calculatedChecksum);
+        }
+        
+        return null;
+    }
+}

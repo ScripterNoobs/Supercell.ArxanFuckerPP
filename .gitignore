@@ -1,0 +1,15 @@
+.DS_Store
+.vscode/
+.idea/
+bin/
+obj/
+*.user
+lib/
+*.so
+*.exe
+*.dll
+*.pdb
+*.dylib
+*.log
+*.zip
+*.tar.gz
